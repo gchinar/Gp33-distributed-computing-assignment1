@@ -1,21 +1,3 @@
-###############################################################################
-# server1.py
-#
-# Role:
-#   Acts as SERVER1, the coordinator server in the distributed system.
-#
-# Main responsibilities:
-#   1. Receive the pathname request from CLIENT
-#   2. Check whether the requested file exists in SERVER1's replica directory
-#   3. Ask SERVER2 for the same file
-#   4. Compare both copies when both are available
-#   5. Return the correct result back to CLIENT
-#
-# Note:
-#   The logic below is the same working logic that was tested on the cloud
-#   nodes. Only explanatory comments have been added for readability.
-###############################################################################
-
 import argparse
 import os
 import socket
@@ -30,10 +12,6 @@ from common import (
 
 
 def fetch_from_server2(server2_host, server2_port, timeout, requested_path):
-    """
-    Open a short-lived connection to SERVER2, forward the same pathname,
-    and return SERVER2's response header and payload.
-    """
     with socket.create_connection((server2_host, server2_port), timeout=timeout) as s2:
         send_message(s2, {
             "type": "REQUEST",
@@ -43,12 +21,6 @@ def fetch_from_server2(server2_host, server2_port, timeout, requested_path):
 
 
 def send_files_response(conn, request_path, message, files_meta, payload):
-    """
-    Send a FILES response back to CLIENT.
-
-    files_meta tells the CLIENT how many files are being returned,
-    their names, lengths, and the server source.
-    """
     send_message(conn, {
         "status": "FILES",
         "request_path": request_path,
@@ -58,17 +30,10 @@ def send_files_response(conn, request_path, message, files_meta, payload):
 
 
 def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
-    """
-    Handle one CLIENT connection.
-
-    Each accepted connection is processed in its own thread so that SERVER1
-    can serve more than one client request over time.
-    """
     with conn:
         try:
             header, _ = recv_message(conn)
 
-            # Only REQUEST messages are valid in this assignment.
             if header.get("type") != "REQUEST":
                 send_message(conn, {
                     "status": "ERROR",
@@ -77,8 +42,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                 return
 
             requested_path = header.get("path", "")
-
-            # Step 1: Check SERVER1's local replica directory.
             rel_path, file1_bytes = read_replica_file(replica_dir, requested_path)
 
             if file1_bytes is None:
@@ -86,7 +49,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
             else:
                 print(f"[SERVER1] Local FOUND: {rel_path} ({len(file1_bytes)} bytes)", flush=True)
 
-            # Step 2: Ask SERVER2 for the same normalized pathname.
             file2_bytes = None
             server2_note = None
 
@@ -113,16 +75,10 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                     print(f"[SERVER1] {server2_note}", flush=True)
 
             except Exception as exc:
-                # Even if SERVER2 is unavailable, SERVER1 may still be able
-                # to serve its own local copy.
                 server2_note = f"SERVER2 unavailable: {exc}"
                 print(f"[SERVER1] {server2_note}", flush=True)
 
-            # Step 3: Decide what result must be returned to CLIENT.
-
-            # Case A: Both SERVER1 and SERVER2 have the file.
             if file1_bytes is not None and file2_bytes is not None:
-                # If both copies are identical, return only one copy.
                 if file1_bytes == file2_bytes:
                     message = "Identical file found on both servers. SERVER1 returned one copy."
                     files_meta = [{
@@ -133,8 +89,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                     send_files_response(conn, rel_path, message, files_meta, file1_bytes)
                     return
 
-                # If both copies exist but differ, return both copies with
-                # clear server-specific names.
                 message = "Replicas differ. SERVER1 returned both files."
                 rel1 = versioned_relpath(rel_path, "SERVER1")
                 rel2 = versioned_relpath(rel_path, "SERVER2")
@@ -156,7 +110,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                 send_files_response(conn, rel_path, message, files_meta, payload)
                 return
 
-            # Case B: Only SERVER1 has the file.
             if file1_bytes is not None:
                 message = "File found only on SERVER1."
                 if server2_note:
@@ -170,7 +123,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                 send_files_response(conn, rel_path, message, files_meta, file1_bytes)
                 return
 
-            # Case C: Only SERVER2 has the file.
             if file2_bytes is not None:
                 message = "File found only on SERVER2 and forwarded by SERVER1."
                 files_meta = [{
@@ -181,7 +133,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
                 send_files_response(conn, rel_path, message, files_meta, file2_bytes)
                 return
 
-            # Case D: Neither server can provide the file.
             if server2_note:
                 message = f"File not found on SERVER1, and SERVER2 could not provide it. {server2_note}"
             else:
@@ -215,10 +166,6 @@ def handle_client(conn, addr, replica_dir, server2_host, server2_port, timeout):
 
 
 def main():
-    """
-    Parse command-line arguments, bind the listening socket, and keep
-    accepting CLIENT connections forever.
-    """
     parser = argparse.ArgumentParser(description="Coordinator file server: SERVER1")
     parser.add_argument(
         "--bind-host",
