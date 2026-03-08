@@ -1,20 +1,3 @@
-###############################################################################
-# server2.py
-#
-# Role:
-#   Acts as SERVER2, the replica file server in the distributed system.
-#
-# Main responsibilities:
-#   1. Receive the pathname request from SERVER1
-#   2. Look for the requested file in SERVER2's replica directory
-#   3. Return the file when it exists
-#   4. Return NOT_FOUND when the file does not exist
-#
-# Note:
-#   The logic below is the same working logic that was tested on the cloud
-#   nodes. Only explanatory comments have been added for readability.
-###############################################################################
-
 import argparse
 import os
 import socket
@@ -24,16 +7,10 @@ from common import read_replica_file, recv_message, send_message
 
 
 def handle_connection(conn, addr, replica_dir):
-    """
-    Handle one request coming from SERVER1.
-
-    Each incoming connection is processed in a separate thread.
-    """
     with conn:
         try:
             header, _ = recv_message(conn)
 
-            # Only REQUEST messages are valid for this server.
             if header.get("type") != "REQUEST":
                 send_message(conn, {
                     "status": "ERROR",
@@ -42,8 +19,6 @@ def handle_connection(conn, addr, replica_dir):
                 return
 
             requested_path = header.get("path", "")
-
-            # Look for the requested file in SERVER2's replica directory.
             rel_path, content = read_replica_file(replica_dir, requested_path)
 
             if content is None:
@@ -83,10 +58,6 @@ def handle_connection(conn, addr, replica_dir):
 
 
 def main():
-    """
-    Parse command-line arguments, bind the listening socket, and keep
-    serving SERVER1 requests forever.
-    """
     parser = argparse.ArgumentParser(description="Replica file server: SERVER2")
     parser.add_argument(
         "--bind-host",
